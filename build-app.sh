@@ -22,6 +22,9 @@ rm -rf "$BUNDLE"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 cp "$BIN_PATH" "$BUNDLE/Contents/MacOS/$BINARY"
 cp Resources/Info.plist "$BUNDLE/Contents/Info.plist"
+if [ -f Resources/AppIcon.icns ]; then
+  cp Resources/AppIcon.icns "$BUNDLE/Contents/Resources/AppIcon.icns"
+fi
 
 # Ad-hoc code signature so Gatekeeper lets it run locally.
 codesign --force --deep --sign - "$BUNDLE" >/dev/null 2>&1 || \
