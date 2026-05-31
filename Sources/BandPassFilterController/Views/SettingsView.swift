@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject private var model: ControllerViewModel
@@ -53,6 +55,8 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
+                backupRestoreSection
+                devicePagesSection
                 maintenanceSection
             }
             .padding(24)
@@ -155,6 +159,65 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             .padding(4)
+        }
+    }
+
+    // Backup downloads the device's /config JSON; Restore loads such a file
+    // back into the form for review before Save (mirrors the web portal).
+    private var backupRestoreSection: some View {
+        GroupBox("Backup / Restore") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Button {
+                        backupConfig()
+                    } label: { Label("Back Up Config…", systemImage: "square.and.arrow.down") }
+                        .disabled(!model.connection.isOnline)
+                    Button {
+                        restoreConfig()
+                    } label: { Label("Restore from File…", systemImage: "square.and.arrow.up") }
+                    Spacer()
+                }
+                Text("Backup saves the device's /config as JSON. Restore loads it into the form above — review, then Save to Device. The Wi-Fi password is never included.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(4)
+        }
+    }
+
+    // Quick links to the device's own web pages (portal + live view).
+    private var devicePagesSection: some View {
+        GroupBox("Device Web Pages") {
+            HStack {
+                Button {
+                    if let url = model.webPortalURL { NSWorkspace.shared.open(url) }
+                } label: { Label("Open Web Portal", systemImage: "safari") }
+                Button {
+                    if let url = model.livePageURL { NSWorkspace.shared.open(url) }
+                } label: { Label("Open Live Page", systemImage: "dot.radiowaves.left.and.right") }
+                Spacer()
+            }
+            .padding(4)
+        }
+    }
+
+    private func backupConfig() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue =
+            "bpf-so2r-config-\(model.configDraft.hostname.isEmpty ? "device" : model.configDraft.hostname).json"
+        panel.canCreateDirectories = true
+        if panel.runModal() == .OK, let url = panel.url {
+            Task { await model.backupConfig(to: url) }
+        }
+    }
+
+    private func restoreConfig() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url {
+            Task { await model.restoreConfig(from: url) }
         }
     }
 
