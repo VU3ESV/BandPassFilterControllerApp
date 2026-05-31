@@ -29,6 +29,10 @@ final class ControllerViewModel: ObservableObject {
     @Published var configDraft = DeviceConfig()
     @Published var configMessage: String?
     @Published var isSavingConfig = false
+    @Published var isLoadingConfig = false
+    /// True once the draft has been populated from the device (vs. defaults),
+    /// so the Settings screen doesn't re-fetch and clobber in-progress edits.
+    @Published private(set) var configLoaded = false
 
     private var pollTask: Task<Void, Never>?
 
@@ -80,6 +84,24 @@ final class ControllerViewModel: ObservableObject {
 
     // MARK: - Config
 
+    /// Pull the device's stored configuration into the editable draft so the
+    /// Settings screen reflects what the controller is actually running (host,
+    /// port, IARU region, SSID, hostname) rather than app-side defaults.
+    /// On failure (device offline / old firmware without `/config`) it falls
+    /// back to seeding the hostname from the address and leaves a note.
+    func loadConfigFromDevice() async {
+        isLoadingConfig = true
+        defer { isLoadingConfig = false }
+        do {
+            configDraft = try await client.fetchConfig()
+            configLoaded = true
+            configMessage = nil
+        } catch {
+            prepareConfigDraft()
+            configMessage = "Couldn't read current config from device: \(error.localizedDescription)"
+        }
+    }
+
     /// Seed the editable draft from the persisted address + last known status.
     func prepareConfigDraft() {
         // Hostname is the part of `host` before ".local" when applicable.
@@ -100,6 +122,9 @@ final class ControllerViewModel: ObservableObject {
         do {
             try await client.saveConfig(configDraft)
             configMessage = "Saved. The device may reboot to apply network changes."
+            // Re-sync the draft with what the device actually stored, so the
+            // form shows the persisted values (and any clamping the firmware did).
+            if let fresh = try? await client.fetchConfig() { configDraft = fresh }
         } catch {
             configMessage = "Save failed: \(error.localizedDescription)"
         }

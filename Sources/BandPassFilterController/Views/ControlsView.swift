@@ -2,8 +2,6 @@ import SwiftUI
 
 struct ControlsView: View {
     @EnvironmentObject private var model: ControllerViewModel
-    @State private var showFactoryConfirm = false
-    @State private var showRebootConfirm = false
 
     var body: some View {
         ScrollView {
@@ -11,7 +9,6 @@ struct ControlsView: View {
                 Text("Controls").font(.largeTitle.bold())
 
                 bypassSection
-                maintenanceSection
             }
             .padding(24)
             .frame(maxWidth: 640, alignment: .leading)
@@ -55,45 +52,5 @@ struct ControlsView: View {
             .tint(.green)
         }
         .disabled(!model.connection.isOnline)
-    }
-
-    private var maintenanceSection: some View {
-        GroupBox("Maintenance") {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Reboot Device").font(.headline)
-                        Text("Soft restart (POST /reboot).")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Reboot…") { showRebootConfirm = true }
-                        .buttonStyle(.bordered)
-                }
-                Divider()
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Factory Reset").font(.headline).foregroundStyle(.red)
-                        Text("Zeros EEPROM and reboots into the setup portal. This erases all config.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Factory Reset…", role: .destructive) { showFactoryConfirm = true }
-                        .buttonStyle(.bordered)
-                        .tint(.red)
-                }
-            }
-            .padding(4)
-        }
-        .confirmationDialog("Reboot the device now?",
-                            isPresented: $showRebootConfirm, titleVisibility: .visible) {
-            Button("Reboot", role: .destructive) { Task { await model.reboot() } }
-            Button("Cancel", role: .cancel) {}
-        }
-        .confirmationDialog("Factory reset will erase all settings and reboot into the BPF-Setup portal. Continue?",
-                            isPresented: $showFactoryConfirm, titleVisibility: .visible) {
-            Button("Erase & Reset", role: .destructive) { Task { await model.factoryReset() } }
-            Button("Cancel", role: .cancel) {}
-        }
     }
 }

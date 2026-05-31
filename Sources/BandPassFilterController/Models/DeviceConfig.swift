@@ -39,3 +39,35 @@ struct DeviceConfig: Equatable {
         return items.percentEncodedQuery ?? ""
     }
 }
+
+/// Decodes the firmware's `GET /config` JSON (WebPortal.h handleConfig):
+///   { "ssid", "hostname", "r1": {host,port,iaru}, "r2": {host,port,iaru} }
+/// The Wi-Fi password is not returned by the device, so it stays empty here —
+/// matching the "leave blank to keep current" behaviour of `/save`.
+/// Declared in an extension so the memberwise/default initializers survive.
+extension DeviceConfig: Decodable {
+    private enum CodingKeys: String, CodingKey {
+        case ssid, hostname, r1, r2
+    }
+    private enum RadioKeys: String, CodingKey {
+        case host, port, iaru
+    }
+
+    init(from decoder: Decoder) throws {
+        self.init()  // start from defaults, then overlay whatever the device sent
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        wifiSSID = (try? c.decode(String.self, forKey: .ssid)) ?? wifiSSID
+        hostname = (try? c.decode(String.self, forKey: .hostname)) ?? hostname
+
+        if let r1 = try? c.nestedContainer(keyedBy: RadioKeys.self, forKey: .r1) {
+            radio1Host = (try? r1.decode(String.self, forKey: .host)) ?? radio1Host
+            radio1Port = (try? r1.decode(Int.self, forKey: .port)) ?? radio1Port
+            radio1IARU = (try? r1.decode(Int.self, forKey: .iaru)) ?? radio1IARU
+        }
+        if let r2 = try? c.nestedContainer(keyedBy: RadioKeys.self, forKey: .r2) {
+            radio2Host = (try? r2.decode(String.self, forKey: .host)) ?? radio2Host
+            radio2Port = (try? r2.decode(Int.self, forKey: .port)) ?? radio2Port
+            radio2IARU = (try? r2.decode(Int.self, forKey: .iaru)) ?? radio2IARU
+        }
+    }
+}
