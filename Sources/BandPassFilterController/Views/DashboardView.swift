@@ -42,14 +42,18 @@ struct DashboardView: View {
     private func filterGrid(_ status: DeviceStatus) -> some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 16),
                             GridItem(.flexible(), spacing: 16)], spacing: 16) {
-            FilterCardView(index: 1, radio: status.r1)
-            FilterCardView(index: 2, radio: status.isSharedMode ? status.r1 : status.r2)
+            FilterCardView(index: 1, radio: status.r1, sensors: status.sensors,
+                           showSensors: status.hasSensorData)
+            FilterCardView(index: 2, radio: status.isSharedMode ? status.r1 : status.r2,
+                           sensors: status.sensors, showSensors: status.hasSensorData)
         }
     }
 
     private func deviceInfo(_ status: DeviceStatus) -> some View {
         GroupBox("Device") {
             VStack(spacing: 0) {
+                infoRow("Firmware", firmwareValue(status), systemImage: "cpu")
+                Divider()
                 infoRow("Wi-Fi", status.apMode ? "Access Point" : (status.wifiUp ? "Connected" : "Down"),
                         systemImage: "wifi", ok: status.wifiUp || status.apMode)
                 Divider()
@@ -63,6 +67,14 @@ struct DashboardView: View {
                 infoRow("Uptime", status.uptimeDisplay, systemImage: "clock")
             }
         }
+    }
+
+    private func firmwareValue(_ status: DeviceStatus) -> String {
+        guard status.version != nil else { return "—" }
+        if let build = status.build, !build.isEmpty {
+            return "\(status.firmwareDisplay) (\(build))"
+        }
+        return status.firmwareDisplay
     }
 
     private func infoRow(_ label: String, _ value: String, systemImage: String, ok: Bool? = nil) -> some View {
@@ -103,6 +115,8 @@ struct DashboardView: View {
 struct FilterCardView: View {
     let index: Int
     let radio: RadioStatus
+    var sensors: Sensors = Sensors()
+    var showSensors: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -138,6 +152,11 @@ struct FilterCardView: View {
                     statusChip("Bypass", color: .gray)
                 }
             }
+
+            if showSensors {
+                Divider()
+                sensorRow
+            }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -146,6 +165,27 @@ struct FilterCardView: View {
             RoundedRectangle(cornerRadius: 14)
                 .strokeBorder(borderColor, lineWidth: 1.5)
         )
+    }
+
+    private var sensorRow: some View {
+        HStack(spacing: 18) {
+            sensorReadout("FWD", "\(sensors.forward(index)) mV", icon: "arrow.right.circle")
+            sensorReadout("REV", "\(sensors.reverse(index)) mV", icon: "arrow.left.circle")
+            Spacer()
+            Text("RF detector")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    private func sensorReadout(_ label: String, _ value: String, icon: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon).font(.callout).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(label).font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+                Text(value).font(.caption.monospacedDigit())
+            }
+        }
     }
 
     private var borderColor: Color {

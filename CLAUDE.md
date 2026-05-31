@@ -45,9 +45,10 @@ Sources/BandPassFilterController/
 │   └── ControllerViewModel.swift      # @MainActor ObservableObject: polling, state, actions
 └── Views/
     ├── ContentView.swift              # NavigationSplitView + sidebar + connection badge
-    ├── DashboardView.swift            # filter cards + device info
-    ├── ControlsView.swift             # manual bypass + reboot + factory reset
-    └── SettingsView.swift             # app connection + TCI servers + device network
+    ├── DashboardView.swift            # filter cards (band/freq/RF sensors) + device info (+firmware)
+    ├── ControlsView.swift             # manual bypass
+    ├── HistoryView.swift              # band-change history + clear
+    └── SettingsView.swift             # TCI servers, network, backup/restore, web pages, reboot/factory reset
 ```
 
 Data flow: `ControllerViewModel` owns a `BPFClient`, runs a polling `Task` that
@@ -65,16 +66,21 @@ and `ESP32_SO2R_TCI/BcdBandPlan.h` (`bandName()`).
 
 | Route | Method | Params / Body | Notes |
 |-------|--------|---------------|-------|
-| `/status` | GET | — | JSON (below) |
+| `/status` | GET | — | JSON (below); now includes `version`, `build`, `sensors`, `history` |
+| `/config` | GET | — | JSON config (host/port/iaru/ssid/hostname); used by Settings + backup. No password. |
 | `/save` | POST | `ssid, pass, hostname, r1_host, r1_port, r1_iaru, r2_host, r2_port, r2_iaru` | form-urlencoded |
 | `/bypass` | POST | `bpf=1\|2 & on=0\|1` | manual bypass |
+| `/history` | POST | `clear=YES` | clears the band-change history ring buffer |
 | `/reboot` | POST | — | soft restart |
 | `/factory_reset` | POST | `confirm=YES` | wipes EEPROM |
+| `/live` | GET | — | device-rendered live HTML page (app just opens it in a browser) |
 
-`/status` JSON shape:
+`/status` JSON shape (firmware ≥ v0.5.0):
 ```json
 {
   "filter": "<label>",
+  "version": "0.5.0",             // firmware version
+  "build": "<__DATE__ __TIME__>", // firmware build stamp
   "mode": "shared" | "dual",
   "ap_mode": true|false,
   "wifi": "up" | "down",          // STRING, not bool
@@ -82,6 +88,9 @@ and `ESP32_SO2R_TCI/BcdBandPlan.h` (`bandName()`).
   "rssi": -57,
   "r1": { "connected": bool, "freq_hz": int, "band": "20m"|"bypass"|..., "tuning": bool },
   "r2": { ...same... },
+  "sensors": { "bpf1_fwd_mv": int, "bpf1_rev_mv": int, "bpf2_fwd_mv": int, "bpf2_rev_mv": int },
+  "history": [ { "t": uptime_s, "bpf": 1|2, "hz": int, "code": int, "inh": bool, "tune": bool } ],
+  "history_count": int,
   "uptime_s": int
 }
 ```
@@ -94,6 +103,16 @@ Gotchas already handled in the models — preserve these:
   "leave unchanged", so `DeviceConfig.formBody()` omits `r{n}_iaru` when 0.
 - In **shared** mode the firmware drives both BPFs from one TCI client; `r2`
   mirrors `r1`. The dashboard/controls fall back to `r1` for BPF 2 when shared.
+- `sensors` are raw RF-detector millivolts (0 = no RF / no detector). We show
+  them verbatim and deliberately do **not** derive SWR — the detectors are
+  uncalibrated and the idle floor reads fwd≈rev, which would fake a huge SWR.
+- `history` arrives oldest-first; the History view reverses it for newest-first.
+  Event `t` is the device uptime at the event; the UI shows it relative to the
+  current `uptime_s` ("3m ago").
+- Backup = `GET /config` saved to a `.json` file; restore decodes that file into
+  `DeviceConfig` (already `Decodable`) for review, then the user taps Save.
+- OTA (firmware ≥ #3) is ArduinoOTA/espota only — **no web endpoint**, so the app
+  can't trigger updates; it only surfaces the running `version`/`build`.
 
 ## Conventions
 

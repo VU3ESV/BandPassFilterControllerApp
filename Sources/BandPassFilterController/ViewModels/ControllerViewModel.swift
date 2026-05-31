@@ -152,4 +152,49 @@ final class ControllerViewModel: ObservableObject {
         connection = .offline("Factory reset — device rebooting…")
         status = nil
     }
+
+    // MARK: - History
+
+    func clearHistory() async {
+        do {
+            try await client.clearHistory()
+            await refresh()
+        } catch {
+            connection = .offline(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Backup / Restore
+
+    /// Write the device's `/config` JSON (a portable backup) to `url`.
+    func backupConfig(to url: URL) async {
+        configMessage = nil
+        do {
+            let data = try await client.fetchConfigData()
+            try data.write(to: url, options: .atomic)
+            configMessage = "Backed up config to \(url.lastPathComponent)."
+        } catch {
+            configMessage = "Backup failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Load a previously backed-up `/config` JSON file into the editable draft.
+    /// Does not push to the device — the user reviews, then taps Save.
+    func restoreConfig(from url: URL) async {
+        configMessage = nil
+        do {
+            let data = try Data(contentsOf: url)
+            configDraft = try JSONDecoder().decode(DeviceConfig.self, from: data)
+            configLoaded = true
+            configMessage = "Loaded \(url.lastPathComponent) into the form — review, then Save to Device."
+        } catch {
+            configMessage = "Restore failed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - External pages
+
+    /// Device web portal / live page URLs for opening in the user's browser.
+    var webPortalURL: URL? { client.pageURL() }
+    var livePageURL: URL? { client.pageURL("live") }
 }

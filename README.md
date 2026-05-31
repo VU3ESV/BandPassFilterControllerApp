@@ -11,26 +11,40 @@ the device's HTTP API instead of you opening a browser.
 ## Features
 
 - **Dashboard** — a live card per band-pass filter (BPF 1 / BPF 2) showing the
-  selected band (Yaesu BCD code), VFO frequency, RX / TUNE / bypass state, and the
-  per-radio TCI link. Plus device Wi-Fi / IP / RSSI / mode (shared vs dual) / uptime.
+  selected band (Yaesu BCD code), VFO frequency, RX / TUNE / bypass state, the
+  per-radio TCI link, and the **RF forward/reverse detector readings** (mV).
+  Plus device **firmware version/build**, Wi-Fi / IP / RSSI / mode / uptime.
 - **Controls** — manual bypass ON/OFF for each filter (for radios like AetherSDR
-  whose TCI server doesn't emit tune events), plus soft reboot and factory reset.
+  whose TCI server doesn't emit tune events).
+- **History** — the device's recent **band-change events** (newest first, with
+  relative timestamps, ATU-tune and bypass flags), and a button to clear it.
 - **Settings** — configure the two TCI servers (host : port : IARU region), the
   device Wi-Fi credentials, and the mDNS hostname, then push them to the device —
-  exactly like the web `Save` button. Also sets the app's own polling address/rate.
+  exactly like the web `Save` button. Also: **back up / restore** the config to a
+  JSON file, open the device's **web portal / live page** in a browser, and
+  **reboot / factory reset** the controller. Plus the app's own address/poll rate.
 
-The app polls `GET /status` on an interval (default 1.5 s) and shows a connection
-badge; all writes use the same routes as the firmware web portal.
+On first load (and whenever you change the address) Settings reads the device's
+real stored config via `GET /config` and pre-fills the form. The app polls
+`GET /status` on an interval (default 1.5 s) and shows a connection badge; all
+writes use the same routes as the firmware web portal.
 
-## Device API used (from the firmware `WebPortal.h` / `statusJson`)
+> **Firmware updates (OTA):** the firmware updates over Wi-Fi via ArduinoOTA
+> (`espota`), which has no HTTP endpoint — so the app can't push updates. It does
+> surface the running version/build so you know what's installed.
+
+## Device API used (firmware ≥ v0.5.0)
 
 | Route | Method | Purpose |
 |-------|--------|---------|
-| `/status` | GET | JSON: `mode`, `ap_mode`, `wifi`, `ip`, `rssi`, `r1`/`r2` `{connected, freq_hz, band, tuning}`, `uptime_s` |
+| `/status` | GET | JSON: `version`, `build`, `mode`, `ap_mode`, `wifi`, `ip`, `rssi`, `r1`/`r2` `{connected, freq_hz, band, tuning}`, `sensors`, `history`, `uptime_s` |
+| `/config` | GET | JSON stored config (pre-fill Settings + backup); never includes the Wi-Fi password |
 | `/save` | POST | form: `ssid`, `pass`, `hostname`, `r{1,2}_host`, `r{1,2}_port`, `r{1,2}_iaru` |
 | `/bypass` | POST | `bpf=1\|2 & on=0\|1` |
+| `/history` | POST | `clear=YES` — clear band-change history |
 | `/reboot` | POST | soft restart |
 | `/factory_reset` | POST | `confirm=YES` |
+| `/live` | GET | device live HTML page (opened in a browser) |
 
 ## Build & run
 
@@ -66,7 +80,7 @@ Sources/BandPassFilterController/
 ├── Models/                       # Band, DeviceStatus, RadioStatus, DeviceConfig
 ├── Networking/BPFClient.swift    # async HTTP client over the firmware API
 ├── ViewModels/ControllerViewModel.swift  # polling + persistence + actions
-└── Views/                        # Dashboard, Controls, Settings, sidebar
+└── Views/                        # Dashboard, Controls, History, Settings, sidebar
 ```
 
 > Note: the local firmware clone lives in a sibling folder

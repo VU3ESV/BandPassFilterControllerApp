@@ -7,6 +7,7 @@ struct ContentView: View {
     enum SidebarItem: String, CaseIterable, Identifiable {
         case dashboard = "Dashboard"
         case controls = "Controls"
+        case history = "History"
         case settings = "Settings"
         var id: String { rawValue }
 
@@ -14,6 +15,7 @@ struct ContentView: View {
             switch self {
             case .dashboard: return "antenna.radiowaves.left.and.right"
             case .controls: return "switch.2"
+            case .history: return "clock.arrow.circlepath"
             case .settings: return "gearshape"
             }
         }
@@ -35,6 +37,7 @@ struct ContentView: View {
                 switch selection {
                 case .dashboard: DashboardView()
                 case .controls: ControlsView()
+                case .history: HistoryView()
                 case .settings: SettingsView()
                 }
             }
