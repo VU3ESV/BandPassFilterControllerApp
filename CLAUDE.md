@@ -40,7 +40,8 @@ Sources/BandPassFilterController/
 │   ├── DeviceStatus.swift             # /status JSON model (DeviceStatus, RadioStatus)
 │   └── DeviceConfig.swift             # editable config + /save form encoding
 ├── Networking/
-│   └── BPFClient.swift                # async URLSession client over the HTTP API
+│   ├── BPFClient.swift                # async URLSession client over the HTTP API
+│   └── DiscoveryService.swift         # Bonjour browse of _bpf-so2r._tcp (mDNS auto-discovery)
 ├── ViewModels/
 │   └── ControllerViewModel.swift      # @MainActor ObservableObject: polling, state, actions
 └── Views/
@@ -66,6 +67,7 @@ and `ESP32_SO2R_TCI/BcdBandPlan.h` (`bandName()`).
 
 | Route | Method | Params / Body | Notes |
 |-------|--------|---------------|-------|
+| `/discover` | GET | — | static identity JSON: `service, vendor, product, version, build, hostname, ip, bpf_count, ports, endpoints`. Companion to the `_bpf-so2r._tcp` mDNS service. |
 | `/status` | GET | — | JSON (below); now includes `version`, `build`, `sensors`, `history` |
 | `/config` | GET | — | JSON config (host/port/iaru/ssid/hostname); used by Settings + backup. No password. |
 | `/save` | POST | `ssid, pass, hostname, r1_host, r1_port, r1_iaru, r2_host, r2_port, r2_iaru` | form-urlencoded |
@@ -113,6 +115,17 @@ Gotchas already handled in the models — preserve these:
   `DeviceConfig` (already `Decodable`) for review, then the user taps Save.
 - OTA (firmware ≥ #3) is ArduinoOTA/espota only — **no web endpoint**, so the app
   can't trigger updates; it only surfaces the running `version`/`build`.
+- Discovery (firmware ≥ #6) has two halves: the device advertises mDNS
+  `_bpf-so2r._tcp` (TXT: vendor/product/version/build/host/bpf/path/ws_live) and
+  serves `GET /discover`. `DiscoveryService` browses the mDNS service with
+  `NetServiceBrowser`; `BPFClient.fetchDiscover()` reads `/discover` to confirm a
+  device's identity. The Settings screen lists discovered devices; picking one
+  calls `ViewModel.use(device)` (sets host → reconnect → reload config).
+- `DiscoveryService` is a plain `ObservableObject` (NOT `@MainActor`): its
+  `NetServiceBrowser` delegate callbacks already run on the main run loop (the
+  thread that called `start()`), and `MainActor.assumeIsolated` is macOS-14-only.
+- `Info.plist` must keep `NSBonjourServices` (`_bpf-so2r._tcp`) and
+  `NSLocalNetworkUsageDescription`, or the OS blocks the Bonjour browse.
 
 ## Conventions
 

@@ -18,6 +18,10 @@ the device's HTTP API instead of you opening a browser.
   whose TCI server doesn't emit tune events).
 - **History** — the device's recent **band-change events** (newest first, with
   relative timestamps, ATU-tune and bypass flags), and a button to clear it.
+- **Auto-discovery** — Settings browses the LAN for the firmware's
+  `_bpf-so2r._tcp` mDNS service and lists every controller it finds (name, address,
+  version); pick one to connect — no typing addresses. Each connection is confirmed
+  via `GET /discover`, which shows the device identity (product + version).
 - **Settings** — configure the two TCI servers (host : port : IARU region), the
   device Wi-Fi credentials, and the mDNS hostname, then push them to the device —
   exactly like the web `Save` button. Also: **back up / restore** the config to a
@@ -37,6 +41,7 @@ writes use the same routes as the firmware web portal.
 
 | Route | Method | Purpose |
 |-------|--------|---------|
+| `/discover` + mDNS `_bpf-so2r._tcp` | GET / Bonjour | device identity + LAN auto-discovery |
 | `/status` | GET | JSON: `version`, `build`, `mode`, `ap_mode`, `wifi`, `ip`, `rssi`, `r1`/`r2` `{connected, freq_hz, band, tuning}`, `sensors`, `history`, `uptime_s` |
 | `/config` | GET | JSON stored config (pre-fill Settings + backup); never includes the Wi-Fi password |
 | `/save` | POST | form: `ssid`, `pass`, `hostname`, `r{1,2}_host`, `r{1,2}_port`, `r{1,2}_iaru` |
@@ -78,7 +83,7 @@ You can also open the folder in Xcode (`File ▸ Open ▸ Package.swift`).
 Sources/BandPassFilterController/
 ├── App.swift                     # @main scene
 ├── Models/                       # Band, DeviceStatus, RadioStatus, DeviceConfig
-├── Networking/BPFClient.swift    # async HTTP client over the firmware API
+├── Networking/                   # BPFClient (HTTP) + DiscoveryService (mDNS/Bonjour)
 ├── ViewModels/ControllerViewModel.swift  # polling + persistence + actions
 └── Views/                        # Dashboard, Controls, History, Settings, sidebar
 ```

@@ -24,6 +24,8 @@ final class ControllerViewModel: ObservableObject {
     @Published private(set) var status: DeviceStatus?
     @Published private(set) var connection: ConnectionState = .idle
     @Published private(set) var lastUpdated: Date?
+    /// Static identity from `GET /discover`, fetched once per connection.
+    @Published private(set) var identity: DeviceIdentity?
 
     // Editable config draft (Settings screen)
     @Published var configDraft = DeviceConfig()
@@ -56,6 +58,7 @@ final class ControllerViewModel: ObservableObject {
     func restart() {
         stop()
         status = nil
+        identity = nil
         connection = .idle
         start()
     }
@@ -77,9 +80,20 @@ final class ControllerViewModel: ObservableObject {
             status = fresh
             connection = .online
             lastUpdated = Date()
+            // Identity is static; fetch it once per connection after we're online.
+            if identity == nil { identity = try? await client.fetchDiscover() }
         } catch {
             connection = .offline(error.localizedDescription)
         }
+    }
+
+    /// Point the app at a discovered device and reconnect.
+    func use(_ device: DiscoveredDevice) {
+        guard !device.address.isEmpty else { return }
+        host = device.address
+        configLoaded = false
+        restart()
+        Task { await loadConfigFromDevice() }
     }
 
     // MARK: - Config

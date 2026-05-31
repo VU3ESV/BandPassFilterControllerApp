@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject private var model: ControllerViewModel
+    @StateObject private var discovery = DiscoveryService()
     @State private var hostDraft: String = ""
     @State private var showRebootConfirm = false
     @State private var showFactoryConfirm = false
@@ -70,7 +71,10 @@ struct SettingsView: View {
             if !model.configLoaded {
                 Task { await model.loadConfigFromDevice() }
             }
+            discovery.start()   // browse the LAN for _bpf-so2r._tcp controllers
         }
+        .onDisappear { discovery.stop() }
+        .onChange(of: model.host) { newHost in hostDraft = newHost }
     }
 
     // MARK: - Sections
@@ -85,6 +89,14 @@ struct SettingsView: View {
                 }
                 Text("mDNS hostname (default SO2R-BPF.local) or IP. The captive portal lives at 192.168.4.1.")
                     .font(.caption).foregroundStyle(.secondary)
+
+                if let id = model.identity {
+                    Label("\(id.productName) \(id.versionDisplay) · \(id.hostname ?? model.host)",
+                          systemImage: "checkmark.seal.fill")
+                        .font(.caption).foregroundStyle(.green)
+                }
+
+                discoverySubsection
 
                 HStack {
                     Toggle("Live polling", isOn: $model.pollingEnabled)
@@ -101,6 +113,65 @@ struct SettingsView: View {
             }
             .padding(4)
         }
+    }
+
+    // mDNS auto-discovery of `_bpf-so2r._tcp` controllers on the LAN.
+    @ViewBuilder
+    private var discoverySubsection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Label("Discovered on network", systemImage: "dot.radiowaves.up.forward")
+                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                if discovery.isBrowsing { ProgressView().controlSize(.mini) }
+                Spacer()
+                Button {
+                    discovery.restart()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .help("Re-scan the network")
+            }
+
+            if discovery.devices.isEmpty {
+                Text(discovery.isBrowsing ? "Searching…" : "No controllers found yet.")
+                    .font(.caption).foregroundStyle(.tertiary)
+            } else {
+                ForEach(discovery.devices) { device in
+                    discoveredRow(device)
+                }
+            }
+        }
+    }
+
+    private func discoveredRow(_ device: DiscoveredDevice) -> some View {
+        let isCurrent = device.address == model.host
+        return Button {
+            model.use(device)
+            hostDraft = device.address
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .foregroundStyle(isCurrent ? Color.accentColor : .secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(device.title).font(.callout.weight(.medium))
+                    Text([device.address, device.version.map { "v\($0)" }]
+                        .compactMap { $0 }.joined(separator: "  ·  "))
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if isCurrent {
+                    Text("Current").font(.caption2).foregroundStyle(.green)
+                } else {
+                    Image(systemName: "arrow.right.circle").foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4).padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor),
+                        in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
     }
 
     private func radioSection(title: String,
