@@ -1,10 +1,14 @@
 import SwiftUI
 
-@main
-struct BandPassFilterControllerApp: App {
+/// Standalone-app entry. In the suite this type is unused (the container owns
+/// the process); the plugin path is `BPFPlugin`. Kept `public` so the thin
+/// `BandPassFilterControllerMain` executable target can call `.main()` on it.
+public struct BandPassFilterStandaloneApp: App {
     @StateObject private var model = ControllerViewModel()
 
-    var body: some Scene {
+    public init() {}
+
+    public var body: some Scene {
         WindowGroup("Band Pass Filter Controller") {
             ContentView()
                 .environmentObject(model)
