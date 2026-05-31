@@ -24,6 +24,7 @@ enum BPFClientError: LocalizedError {
 ///
 /// Routes (from the firmware web server):
 ///   GET  /status                       -> JSON DeviceStatus
+///   GET  /config                       -> JSON DeviceConfig (stored settings)
 ///   POST /save           (form body)   -> "Saved"
 ///   POST /bypass?bpf=&on=              -> manual bypass
 ///   POST /reboot                       -> soft reboot
@@ -74,6 +75,31 @@ struct BPFClient {
         try Self.validate(response)
         do {
             return try JSONDecoder().decode(DeviceStatus.self, from: data)
+        } catch {
+            throw BPFClientError.decoding(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Config
+
+    /// Read the device's stored configuration (host/port/IARU/SSID/hostname).
+    /// The firmware never returns the Wi-Fi password, so it decodes as empty.
+    func fetchConfig() async throws -> DeviceConfig {
+        let url = try baseURL().appendingPathComponent("config")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session().data(for: request)
+        } catch {
+            throw BPFClientError.transport(error.localizedDescription)
+        }
+        try Self.validate(response)
+        do {
+            return try JSONDecoder().decode(DeviceConfig.self, from: data)
         } catch {
             throw BPFClientError.decoding(error.localizedDescription)
         }

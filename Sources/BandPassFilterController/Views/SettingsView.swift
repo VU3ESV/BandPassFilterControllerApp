@@ -3,11 +3,20 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var model: ControllerViewModel
     @State private var hostDraft: String = ""
+    @State private var showRebootConfirm = false
+    @State private var showFactoryConfirm = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Settings").font(.largeTitle.bold())
+                HStack(spacing: 10) {
+                    Text("Settings").font(.largeTitle.bold())
+                    if model.isLoadingConfig {
+                        ProgressView().controlSize(.small)
+                        Text("Reading current config…")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                }
 
                 connectionSection
                 radioSection(title: "Radio 1 (TCI Server)",
@@ -43,13 +52,20 @@ struct SettingsView: View {
                     Text("Pushes config via POST /save (same as the web portal).")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+
+                maintenanceSection
             }
             .padding(24)
             .frame(maxWidth: 640, alignment: .leading)
         }
         .onAppear {
             hostDraft = model.host
-            model.prepareConfigDraft()
+            // Pull the controller's real settings into the draft the first time
+            // the screen appears; don't re-fetch on later appearances so we
+            // never clobber edits the user has started.
+            if !model.configLoaded {
+                Task { await model.loadConfigFromDevice() }
+            }
         }
     }
 
@@ -142,11 +158,58 @@ struct SettingsView: View {
         }
     }
 
+    // Mirrors the Reboot / Factory reset controls at the bottom of the web portal.
+    private var maintenanceSection: some View {
+        GroupBox("Maintenance") {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Reboot Device").font(.headline)
+                        Text("Soft restart (POST /reboot).")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Reboot…") { showRebootConfirm = true }
+                        .buttonStyle(.bordered)
+                        .disabled(!model.connection.isOnline)
+                }
+                Divider()
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Factory Reset").font(.headline).foregroundStyle(.red)
+                        Text("Zeros EEPROM and reboots into the BPF-Setup portal. This erases all config.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Factory Reset…", role: .destructive) { showFactoryConfirm = true }
+                        .buttonStyle(.bordered)
+                        .tint(.red)
+                        .disabled(!model.connection.isOnline)
+                }
+            }
+            .padding(4)
+        }
+        .confirmationDialog("Reboot the device now?",
+                            isPresented: $showRebootConfirm, titleVisibility: .visible) {
+            Button("Reboot", role: .destructive) { Task { await model.reboot() } }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("Factory reset will erase all settings and reboot into the BPF-Setup portal. Continue?",
+                            isPresented: $showFactoryConfirm, titleVisibility: .visible) {
+            Button("Erase & Reset", role: .destructive) { Task { await model.factoryReset() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Wi-Fi credentials, hostname and both radio endpoints will be wiped.")
+        }
+    }
+
     private func applyHost() {
         let trimmed = hostDraft.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         model.host = trimmed
         model.restart()
+        // New address → re-read config from that device.
+        Task { await model.loadConfigFromDevice() }
     }
 }
 
