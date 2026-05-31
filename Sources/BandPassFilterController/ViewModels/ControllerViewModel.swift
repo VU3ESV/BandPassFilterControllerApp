@@ -16,9 +16,9 @@ final class ControllerViewModel: ObservableObject {
     }
 
     // Persisted settings
-    @AppStorage("device.host") var host: String = "SO2R-BPF.local"
-    @AppStorage("poll.interval") var pollInterval: Double = 1.5
-    @AppStorage("poll.enabled") var pollingEnabled: Bool = true
+    @AppStorage("device.host", store: AppDefaults.store) var host: String = "SO2R-BPF.local"
+    @AppStorage("poll.interval", store: AppDefaults.store) var pollInterval: Double = 1.5
+    @AppStorage("poll.enabled", store: AppDefaults.store) var pollingEnabled: Bool = true
 
     // Live state
     @Published private(set) var status: DeviceStatus?
