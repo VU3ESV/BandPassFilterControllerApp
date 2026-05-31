@@ -23,6 +23,7 @@ enum BPFClientError: LocalizedError {
 /// Thin async client over the firmware's HTTP API.
 ///
 /// Routes (from the firmware web server):
+///   GET  /discover                     -> JSON DeviceIdentity (vendor/product/version)
 ///   GET  /status                       -> JSON DeviceStatus (version, sensors, history)
 ///   GET  /config                       -> JSON DeviceConfig (stored settings / backup)
 ///   POST /save           (form body)   -> "Saved"
@@ -64,6 +65,30 @@ struct BPFClient {
         config.waitsForConnectivity = false
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         return URLSession(configuration: config)
+    }
+
+    // MARK: - Discovery
+
+    /// Identify a device by its static `/discover` record. Used to confirm a
+    /// typed/discovered address really is a BPF controller and show its identity.
+    func fetchDiscover() async throws -> DeviceIdentity {
+        let url = try baseURL().appendingPathComponent("discover")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session().data(for: request)
+        } catch {
+            throw BPFClientError.transport(error.localizedDescription)
+        }
+        try Self.validate(response)
+        do {
+            return try JSONDecoder().decode(DeviceIdentity.self, from: data)
+        } catch {
+            throw BPFClientError.decoding(error.localizedDescription)
+        }
     }
 
     // MARK: - Status

@@ -32,5 +32,12 @@
         <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
+    <!-- Bonjour discovery of the firmware's _bpf-so2r._tcp mDNS service. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Finds Band Pass Filter Controllers on your local network so you can connect without typing an address.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_bpf-so2r._tcp</string>
+    </array>
 </dict>
 </plist>
