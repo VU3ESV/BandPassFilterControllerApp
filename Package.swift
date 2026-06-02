@@ -13,7 +13,11 @@ let package = Package(
         .library(name: "BandPassFilterControllerKit", targets: ["BandPassFilterController"]),
     ],
     dependencies: [
-        .package(path: "../RadioPluginKit"),
+        // Consume RadioPluginKit as a published library by Git URL (same as the
+        // other plugin apps and the suite) so the whole dependency graph resolves
+        // one identical RadioPluginKit — avoids the path-vs-URL identity conflict
+        // when hosted in the AmateurRadioApps container.
+        .package(url: "https://github.com/VU3ESV/RadioPluginKit.git", from: "1.0.0"),
     ],
     targets: [
         .target(
