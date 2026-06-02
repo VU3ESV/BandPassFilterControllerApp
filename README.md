@@ -105,10 +105,9 @@ Two GitHub Actions workflows live in [`.github/workflows`](.github/workflows):
   (auto-generated notes) with the zipped app + `SHA256SUMS` attached. With no
   existing tags it starts at `v0.1.0`.
 
-Because a `pull_request: closed` event runs the workflow already on `main`, the PR
-that *adds* `release.yml` does not itself cut a release — only PRs merged after it
-do. To create the first release manually:
-
-```bash
-gh release create v0.1.0 --target main --generate-notes
-```
+Every PR merged into `main` cuts a release — including a docs-only change — so the
+version is really a "merge count" rather than semantic. For `pull_request` events
+GitHub uses the workflow file from the **PR's head**, so even the PR that first
+added `release.yml` triggered it (cutting `v0.1.0`). To skip the release for a
+change, push it straight to `main` (the Release job only runs on `pull_request`
+merges; direct pushes run CI only).

@@ -4,10 +4,10 @@ name: Release
 # the latest vX.Y.Z tag is bumped to vX.(Y+1).0, a GitHub Release is created
 # with auto-generated notes, and the built macOS .app is attached.
 #
-# Note: the workflow that runs for a `pull_request: closed` event is the one
-# already on the base branch (main). So the PR that first adds this file does
-# NOT trigger a release — only PRs merged AFTER it is on main do. Cut the very
-# first tag manually if you want one before then (see README "Releases").
+# Note: for `pull_request` events GitHub uses the workflow file from the PR's
+# head, so even the PR that first added this file triggered a release. To make a
+# change WITHOUT cutting a release, push it straight to main — the Release job
+# only runs on pull_request merges (direct pushes run CI only).
 on:
   pull_request:
     types: [closed]
