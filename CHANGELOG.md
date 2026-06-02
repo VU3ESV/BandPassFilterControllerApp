@@ -13,7 +13,11 @@ an [Amateur Radio Suite](https://github.com/VU3ESV/AmateurRadioSuite) plugin. Fo
   so the suite can browse/install the controller and host it sandboxed via
   `EXHostViewController`. Adds a public `BPFExtension.rootView()` factory; the standalone app
   and in-process `BPFPlugin` are unchanged. CI builds the `.appex` on every PR, and each
-  release attaches `BandPassFilterController-<version>.radioplugin` **alongside** the app zip.
+  release attaches `BandPassFilterController-<version>.radioplugin` **alongside** the app.
+
+### Changed
+- **App is now published as a `.dmg`** (`scripts/make-dmg.sh`) instead of a `.zip`, matching
+  LP-700 / LP-100A. The `.radioplugin` remains an additional artifact on the same release.
 
 ## [0.3.0] — 2026-06-02
 ### Added
