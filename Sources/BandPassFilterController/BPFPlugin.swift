@@ -6,12 +6,16 @@ import RadioPluginKit
 /// `ControllerViewModel`.
 @MainActor
 public final class BPFPlugin: RadioPlugin {
-    public static let metadata = PluginMetadata(
+    public static let manifest: RadioPluginManifest? = RadioPluginManifest(
         id: "bpf",
-        title: "Band Pass Filter",
+        name: "Band Pass Filter",
+        version: "1.0",
+        isolation: .inProcess,                       // first-party, linked into the host
+        capabilities: [.networkClient, .bonjour],
         systemImage: "line.3.horizontal.decrease.circle",
-        version: "1.0"
+        author: "VU3ESV"
     )
+    public static var metadata: PluginMetadata { manifest!.metadata }
 
     private let host: PluginHost
     private let model: ControllerViewModel
