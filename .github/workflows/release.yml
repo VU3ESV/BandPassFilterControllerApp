@@ -70,7 +70,14 @@ jobs:
       - name: Build app bundle
         run: ./build-app.sh
 
-      - name: Package release asset
+      - name: Build plugin package (.appex / .radioplugin)
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          xcodebuild -version
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          ./scripts/make-radioplugin.sh        # -> dist/BPF.radioplugin (leaves the .app intact)
+
+      - name: Package release assets
         id: package
         run: |
           set -euo pipefail
@@ -79,7 +86,9 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent \
             "dist/Band Pass Filter Controller.app" \
             "dist-release/$ZIP"
-          ( cd dist-release && shasum -a 256 ./*.zip > SHA256SUMS )
+          # The plugin is an ADDITIONAL artifact alongside the app zip.
+          cp dist/BPF.radioplugin "dist-release/BandPassFilterController-${NEXT}.radioplugin"
+          ( cd dist-release && shasum -a 256 ./*.zip ./*.radioplugin > SHA256SUMS )
           ls -la dist-release
         env:
           NEXT: ${{ steps.version.outputs.next }}
