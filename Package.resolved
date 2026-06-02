@@ -5,8 +5,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/VU3ESV/RadioPluginKit.git",
       "state" : {
-        "revision" : "37f6c91b0f83889a3360e60e2f05b1b10c8c375e",
-        "version" : "1.1.0"
+        "revision" : "7d503313594c5064690cf70747ced97103abfcdf",
+        "version" : "1.2.1"
       }
     }
   ],
