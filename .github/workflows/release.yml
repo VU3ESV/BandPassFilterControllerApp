@@ -77,18 +77,20 @@ jobs:
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
           ./scripts/make-radioplugin.sh        # -> dist/BPF.radioplugin (leaves the .app intact)
 
+      - name: Build DMG
+        env:
+          VERSION: ${{ steps.version.outputs.next }}
+        run: ./scripts/make-dmg.sh        # -> dist/BandPassFilterController-<NEXT>-macos.dmg
+
       - name: Package release assets
         id: package
         run: |
           set -euo pipefail
           mkdir -p dist-release
-          ZIP="BandPassFilterController-${NEXT}-macos.zip"
-          ditto -c -k --sequesterRsrc --keepParent \
-            "dist/Band Pass Filter Controller.app" \
-            "dist-release/$ZIP"
-          # The plugin is an ADDITIONAL artifact alongside the app zip.
+          # Publish the app as a .dmg; the plugin is an ADDITIONAL artifact alongside it.
+          cp "dist/BandPassFilterController-${NEXT}-macos.dmg" dist-release/
           cp dist/BPF.radioplugin "dist-release/BandPassFilterController-${NEXT}.radioplugin"
-          ( cd dist-release && shasum -a 256 ./*.zip ./*.radioplugin > SHA256SUMS )
+          ( cd dist-release && shasum -a 256 ./*.dmg ./*.radioplugin > SHA256SUMS )
           ls -la dist-release
         env:
           NEXT: ${{ steps.version.outputs.next }}
