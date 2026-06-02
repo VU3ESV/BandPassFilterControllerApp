@@ -90,3 +90,25 @@ Sources/BandPassFilterController/
 
 > Note: the local firmware clone lives in a sibling folder
 > `../BandPassFilterController`; this app is a separate Swift package.
+
+## Continuous integration & releases
+
+Two GitHub Actions workflows live in [`.github/workflows`](.github/workflows):
+
+- **CI** (`ci.yml`) — on every push to `main` and every pull request, builds the
+  package (debug + release) on a macOS runner, runs tests (when a `Tests/` target
+  exists), packages the `.app` via `build-app.sh`, and uploads it as a build
+  artifact.
+- **Release** (`release.yml`) — when a pull request is **merged into `main`**, it
+  bumps the latest `vX.Y.Z` tag to the next **minor** version `vX.(Y+1).0`, stamps
+  that version into `Info.plist`, builds the `.app`, and publishes a GitHub Release
+  (auto-generated notes) with the zipped app + `SHA256SUMS` attached. With no
+  existing tags it starts at `v0.1.0`.
+
+Because a `pull_request: closed` event runs the workflow already on `main`, the PR
+that *adds* `release.yml` does not itself cut a release — only PRs merged after it
+do. To create the first release manually:
+
+```bash
+gh release create v0.1.0 --target main --generate-notes
+```

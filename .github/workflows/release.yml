@@ -1,0 +1,97 @@
+name: Release
+
+# Every pull request merged into main cuts a new MINOR version release:
+# the latest vX.Y.Z tag is bumped to vX.(Y+1).0, a GitHub Release is created
+# with auto-generated notes, and the built macOS .app is attached.
+#
+# Note: the workflow that runs for a `pull_request: closed` event is the one
+# already on the base branch (main). So the PR that first adds this file does
+# NOT trigger a release — only PRs merged AFTER it is on main do. Cut the very
+# first tag manually if you want one before then (see README "Releases").
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write  # create tags / releases and upload assets
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: bump minor + publish
+    if: github.event.pull_request.merged == true
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main          # tag/build the post-merge state of main
+          fetch-depth: 0      # full history + tags for version diffing
+
+      - name: Compute next minor version
+        id: version
+        run: |
+          set -euo pipefail
+          git fetch --tags --force --quiet
+          LATEST="$(git tag -l 'v*.*.*' --sort=-v:refname | head -n1)"
+          if [ -z "$LATEST" ]; then
+            NEXT="v0.1.0"
+          else
+            ver="${LATEST#v}"
+            MAJOR="${ver%%.*}"
+            rest="${ver#*.}"
+            MINOR="${rest%%.*}"
+            NEXT="v${MAJOR}.$((MINOR + 1)).0"
+          fi
+          echo "Previous: ${LATEST:-none}  ->  Next: $NEXT"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "prev=${LATEST:-none}" >> "$GITHUB_OUTPUT"
+
+      - name: Guard against existing tag
+        run: |
+          set -euo pipefail
+          if git rev-parse "refs/tags/${{ steps.version.outputs.next }}" >/dev/null 2>&1; then
+            echo "::error::tag ${{ steps.version.outputs.next }} already exists"
+            exit 1
+          fi
+
+      - name: Stamp app version
+        run: |
+          set -euo pipefail
+          V="${NEXT#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $V" Resources/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $V" Resources/Info.plist
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+
+      - name: Build app bundle
+        run: ./build-app.sh
+
+      - name: Package release asset
+        id: package
+        run: |
+          set -euo pipefail
+          mkdir -p dist-release
+          ZIP="BandPassFilterController-${NEXT}-macos.zip"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "dist/Band Pass Filter Controller.app" \
+            "dist-release/$ZIP"
+          ( cd dist-release && shasum -a 256 ./*.zip > SHA256SUMS )
+          ls -la dist-release
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT: ${{ steps.version.outputs.next }}
+        run: |
+          set -euo pipefail
+          gh release create "$NEXT" \
+            --target main \
+            --title "$NEXT" \
+            --generate-notes \
+            dist-release/*
