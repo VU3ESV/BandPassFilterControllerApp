@@ -18,7 +18,7 @@ jobs:
     name: build + test (macOS)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Toolchain
         run: swift --version
@@ -54,7 +54,7 @@ jobs:
           ls -lh dist/BPF.radioplugin
 
       - name: Upload app artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: BandPassFilterController-app
           path: dist/Band Pass Filter Controller.app
