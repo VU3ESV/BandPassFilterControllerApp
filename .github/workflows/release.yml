@@ -104,6 +104,35 @@ jobs:
         env:
           NEXT: ${{ steps.version.outputs.next }}
 
+      - name: Compose release notes
+        env:
+          NEXT: ${{ steps.version.outputs.next }}
+          # 'true' only when the signing + notary secrets are present — i.e. the build was
+          # Developer-ID signed and Apple-notarized. Otherwise it's an ad-hoc build.
+          NOTARIZED: ${{ secrets.MACOS_CERT_P12_BASE64 != '' && secrets.NOTARY_PASSWORD != '' }}
+        run: |
+          set -euo pipefail
+          # NB: written to the repo root, NOT dist-release/, so it isn't uploaded as an asset.
+          {
+            echo "## Band Pass Filter Controller ${NEXT}"
+            echo
+            echo "macOS controller app + Amateur Radio Suite plugin (\`BandPassFilterController-${NEXT}.radioplugin\`)."
+            echo
+            echo "### Install"
+            echo
+            echo "1. Download \`BandPassFilterController-${NEXT}-macos.dmg\` below."
+            echo "2. Open the DMG and drag **Band Pass Filter Controller.app** to \`/Applications\`."
+            if [ "${NOTARIZED}" = "true" ]; then
+              echo "3. Launch it — signed with Developer ID and **Apple-notarized**, so no Gatekeeper bypass is needed."
+            else
+              echo "3. **One-time Gatekeeper bypass** (this build is ad-hoc-signed, not Apple-notarized):"
+              echo "   \`\`\`sh"
+              echo "   xattr -dr com.apple.quarantine \"/Applications/Band Pass Filter Controller.app\""
+              echo "   \`\`\`"
+              echo "4. Launch normally."
+            fi
+          } > RELEASE_NOTES.md
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -114,4 +143,5 @@ jobs:
             --target main \
             --title "$NEXT" \
             --generate-notes \
+            --notes-file RELEASE_NOTES.md \
             dist-release/*
