@@ -67,8 +67,22 @@ jobs:
         env:
           NEXT: ${{ steps.version.outputs.next }}
 
-      - name: Build app bundle
-        run: ./build-app.sh
+      - name: Build signed + notarized DMG (app with embedded extension)
+        env:
+          VERSION: ${{ steps.version.outputs.next }}
+          # Signing/notarization secrets (see docs/SIGNING-SECRETS.md). When unset, the script
+          # falls back to ad-hoc and skips notarization — the build still succeeds, but the
+          # released app's extension will not register on other Macs.
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          ./scripts/package-signed.sh        # -> dist/BandPassFilterController-<NEXT>-macos.dmg
 
       - name: Build plugin package (.appex / .radioplugin)
         run: |
@@ -76,11 +90,6 @@ jobs:
           xcodebuild -version
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
           ./scripts/make-radioplugin.sh        # -> dist/BPF.radioplugin (leaves the .app intact)
-
-      - name: Build DMG
-        env:
-          VERSION: ${{ steps.version.outputs.next }}
-        run: ./scripts/make-dmg.sh        # -> dist/BandPassFilterController-<NEXT>-macos.dmg
 
       - name: Package release assets
         id: package
