@@ -21,9 +21,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Skip the release when a merged PR only changes documentation (*.md, docs/**, LICENSE).
+  gate:
+    name: Decide whether to release (skip docs-only)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      skip: ${{ steps.decide.outputs.skip }}
+    steps:
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # This workflow only triggers on pull_request — list the PR's changed files.
+          files="$(gh api --paginate "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" -q '.[].filename')"
+          echo "Changed files:"; printf '  %s\n' "$files"
+          # Docs-only when EVERY changed file is markdown, under docs/, or LICENSE.
+          skip=true
+          [ -z "$files" ] && skip=false   # unknown/empty -> release, don't skip
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              *.md|docs/*|*/docs/*|LICENSE) : ;;
+              *) skip=false; break ;;
+            esac
+          done <<< "$files"
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          [ "$skip" = true ] && echo "::notice::Docs-only change — skipping release."
+
   release:
+    needs: gate
     name: bump minor + publish
-    if: github.event.pull_request.merged == true
+    if: github.event.pull_request.merged == true && needs.gate.outputs.skip != 'true'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v6
