@@ -24,21 +24,23 @@ enum DeviceAuth {
     /// challenge, so a fresh 401 is normal and is answered again; only a repeat
     /// within the same request (`previousFailureCount > 0`) means the password
     /// was actually rejected.
+    ///
+    /// Basic is never answered: it would put the password on the wire in clear,
+    /// and the firmware never asks for it — a Basic challenge means something
+    /// else is answering at this address.
     static func decide(method: String, previousFailureCount: Int, password: String?) -> Decision {
-        guard method == NSURLAuthenticationMethodHTTPDigest
-                || method == NSURLAuthenticationMethodHTTPBasic else {
-            return .performDefault
-        }
+        if method == NSURLAuthenticationMethodHTTPBasic { return .cancel(.insecureAuthRefused) }
+        guard method == NSURLAuthenticationMethodHTTPDigest else { return .performDefault }
         guard let password, !password.isEmpty else { return .cancel(.passwordRequired) }
         guard previousFailureCount == 0 else { return .cancel(.passwordRejected) }
         return .answer(user: username, password: password)
     }
 }
 
-/// Per-request URLSession delegate that answers Digest/Basic challenges with the
+/// Per-request URLSession delegate that answers Digest challenges with the
 /// stored device password, and remembers why it cancelled one so `BPFClient`
-/// can throw `passwordRequired` / `passwordRejected` instead of a generic
-/// "cancelled" transport error.
+/// can throw `passwordRequired` / `passwordRejected` / `insecureAuthRefused`
+/// instead of a generic "cancelled" transport error.
 final class DeviceAuthDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let password: String?
     private let lock = NSLock()

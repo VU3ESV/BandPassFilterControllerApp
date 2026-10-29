@@ -9,6 +9,9 @@ enum BPFClientError: LocalizedError, Equatable {
     case passwordRequired
     /// HTTP 401 although a password was sent — it's wrong.
     case passwordRejected
+    /// The server asked for HTTP Basic, which would send the password in clear.
+    /// The firmware only issues Digest challenges, so this is not our device.
+    case insecureAuthRefused
 
     var errorDescription: String? {
         switch self {
@@ -24,10 +27,14 @@ enum BPFClientError: LocalizedError, Equatable {
             return "Device requires a password. Enter it under Settings ▸ Device Password."
         case .passwordRejected:
             return "Device rejected the password. Check it under Settings ▸ Device Password."
+        case .insecureAuthRefused:
+            return "Device asked for the password unencrypted (HTTP Basic); not sent. The controller only uses Digest, so check the device address."
         }
     }
 
-    var isAuthFailure: Bool { self == .passwordRequired || self == .passwordRejected }
+    var isAuthFailure: Bool {
+        self == .passwordRequired || self == .passwordRejected || self == .insecureAuthRefused
+    }
 }
 
 /// Thin async client over the firmware's HTTP API.

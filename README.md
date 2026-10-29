@@ -120,7 +120,7 @@ works either way. Without a password on the device nothing changes.
 Sources/BandPassFilterController/
 ├── App.swift                     # @main scene
 ├── Models/                       # Band, DeviceStatus, RadioStatus, DeviceConfig
-├── Networking/                   # BPFClient (HTTP), DeviceAuth (Digest/Basic challenge),
+├── Networking/                   # BPFClient (HTTP), DeviceAuth (Digest challenge),
 │                                 # DeviceKeychain (password store), DiscoveryService (mDNS)
 ├── ViewModels/ControllerViewModel.swift  # polling + persistence + actions
 └── Views/                        # Dashboard, Controls, History, Settings, sidebar

@@ -12,10 +12,12 @@ final class DeviceAuthTests: XCTestCase {
             .answer(user: "admin", password: "s3cret"))
     }
 
-    func testBasicChallengeIsAnsweredAsAdmin() {
-        XCTAssertEqual(
-            DeviceAuth.decide(method: NSURLAuthenticationMethodHTTPBasic, previousFailureCount: 0, password: "s3cret"),
-            .answer(user: "admin", password: "s3cret"))
+    func testBasicChallengeIsRefusedWithoutSendingThePassword() {
+        for password in ["s3cret", nil] as [String?] {
+            XCTAssertEqual(
+                DeviceAuth.decide(method: NSURLAuthenticationMethodHTTPBasic, previousFailureCount: 0, password: password),
+                .cancel(.insecureAuthRefused))
+        }
     }
 
     func testNoStoredPasswordCancelsAsRequired() {

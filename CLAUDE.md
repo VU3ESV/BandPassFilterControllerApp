@@ -43,7 +43,7 @@ Sources/BandPassFilterController/
 │   └── DeviceIdentity.swift           # /discover JSON (incl. auth_required)
 ├── Networking/
 │   ├── BPFClient.swift                # async URLSession client over the HTTP API (+ typed 401 errors)
-│   ├── DeviceAuth.swift               # Digest/Basic challenge policy + per-request URLSession delegate
+│   ├── DeviceAuth.swift               # Digest challenge policy (Basic refused) + per-request URLSession delegate
 │   ├── DeviceKeychain.swift           # admin password in the login Keychain (per device hostname)
 │   └── DiscoveryService.swift         # Bonjour browse of _bpf-so2r._tcp (mDNS auto-discovery)
 ├── ViewModels/

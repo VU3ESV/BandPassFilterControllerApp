@@ -9,9 +9,10 @@ an [Amateur Radio Suite](https://github.com/VU3ESV/AmateurRadioSuite) plugin. Fo
 
 ### Added
 - **Device password (firmware v0.6.0 auth)**: answers the controller's HTTP Digest
-  (or Basic) challenge as `admin` with a password stored in the login Keychain
+  challenge as `admin` with a password stored in the login Keychain
   (service `BandPassFilterController`, account = device hostname), set from
-  Settings ▸ Device Password. A 401 is a typed error ("Device requires a password" /
+  Settings ▸ Device Password. A Basic challenge is refused, so the password never
+  crosses the LAN in clear. A 401 is a typed error ("Device requires a password" /
   "Device rejected the password"). A refused bypass beeps, raises an alert and keeps a
   red banner on Controls, and the UI only shows bypass once `/status` confirms it. Save,
   clear-history, reboot and factory-reset failures are shown inline instead of being
