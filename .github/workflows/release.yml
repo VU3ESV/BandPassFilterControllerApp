@@ -56,7 +56,7 @@ jobs:
     needs: gate
     name: bump minor + publish
     if: github.event.pull_request.merged == true && needs.gate.outputs.skip != 'true'
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
         with:
