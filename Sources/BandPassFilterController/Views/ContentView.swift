@@ -45,6 +45,14 @@ struct ContentView: View {
             .toolbar { ToolbarContent() }
         }
         .navigationTitle("Band Pass Filter Controller")
+        // App-level so a refused bypass is seen even if the user changed tabs.
+        .alert(model.bypassFailure?.title ?? "Bypass NOT applied",
+               isPresented: $model.showBypassAlert,
+               presenting: model.bypassFailure) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { failure in
+            Text("\(failure.message)\n\n\(failure.advice)")
+        }
     }
 
     @ToolbarContentBuilder

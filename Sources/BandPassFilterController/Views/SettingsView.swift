@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var hostDraft: String = ""
     @State private var showRebootConfirm = false
     @State private var showFactoryConfirm = false
+    @State private var passwordDraft = ""
 
     var body: some View {
         ScrollView {
@@ -22,6 +23,7 @@ struct SettingsView: View {
                 }
 
                 connectionSection
+                devicePasswordSection
                 radioSection(title: "Radio 1 (TCI Server)",
                              host: $model.configDraft.radio1Host,
                              port: $model.configDraft.radio1Port,
@@ -113,6 +115,63 @@ struct SettingsView: View {
             }
             .padding(4)
         }
+    }
+
+    // Admin password for firmware ≥ v0.6.0, kept in the login Keychain per
+    // device hostname. Only stores what the app sends; it doesn't change the
+    // password on the device.
+    private var devicePasswordSection: some View {
+        GroupBox("Device Password") {
+            VStack(alignment: .leading, spacing: 12) {
+                if model.needsDevicePassword {
+                    Label("This controller requires a password. Bypass, Save, Reboot, Factory Reset and Clear History will be refused until you enter it.",
+                          systemImage: "lock.trianglebadge.exclamationmark")
+                        .font(.callout).foregroundStyle(.orange)
+                }
+
+                if let account = model.deviceHostname {
+                    LabeledField(label: "Device password (user admin) for \(account)") {
+                        SecureField(model.hasDevicePassword ? "Stored — type to replace" : "Not stored",
+                                    text: $passwordDraft)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit(savePassword)
+                    }
+                    HStack {
+                        Button("Save to Keychain", action: savePassword)
+                            .buttonStyle(.bordered)
+                            .disabled(passwordDraft.isEmpty)
+                        Button("Remove", role: .destructive) {
+                            passwordDraft = ""
+                            model.forgetDevicePassword()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!model.hasDevicePassword)
+                        Spacer()
+                        if model.hasDevicePassword {
+                            Label("Stored in Keychain", systemImage: "key.fill")
+                                .font(.caption).foregroundStyle(.green)
+                        }
+                    }
+                } else {
+                    Text("Connect to the device first — the password is stored per device hostname.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+
+                if let message = model.passwordMessage {
+                    Label(message, systemImage: "info.circle")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Text("Only needed when the device has an admin password set (firmware v0.6.0+). Kept in your login Keychain (service BandPassFilterController, account = device hostname); this doesn't change the device's password.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(4)
+        }
+    }
+
+    private func savePassword() {
+        guard !passwordDraft.isEmpty else { return }
+        model.saveDevicePassword(passwordDraft)
+        passwordDraft = ""
     }
 
     // mDNS auto-discovery of `_bpf-so2r._tcp` controllers on the LAN.
@@ -319,6 +378,10 @@ struct SettingsView: View {
                         .buttonStyle(.bordered)
                         .tint(.red)
                         .disabled(!model.connection.isOnline)
+                }
+                if let message = model.maintenanceMessage {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout).foregroundStyle(.red)
                 }
             }
             .padding(4)

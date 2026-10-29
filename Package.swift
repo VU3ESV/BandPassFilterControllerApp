@@ -31,5 +31,10 @@ let package = Package(
             dependencies: ["BandPassFilterController"],
             path: "Sources/BandPassFilterControllerMain"
         ),
+        .testTarget(
+            name: "BandPassFilterControllerTests",
+            dependencies: ["BandPassFilterController"],
+            path: "Tests/BandPassFilterControllerTests"
+        ),
     ]
 )

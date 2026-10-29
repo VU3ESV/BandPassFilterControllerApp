@@ -12,11 +12,17 @@ struct DeviceIdentity: Decodable, Equatable {
     var hostname: String?     // configured mDNS hostname, e.g. "SO2R-BPF"
     var ip: String?
     var bpfCount: Int?
+    /// Firmware ≥ v0.6.0: true when the device has an admin password set.
+    /// Older firmware omits it (no auth there), so missing reads as false.
+    var authRequired: Bool?
 
     enum CodingKeys: String, CodingKey {
         case service, vendor, product, version, build, hostname, ip
         case bpfCount = "bpf_count"
+        case authRequired = "auth_required"
     }
+
+    var requiresAuth: Bool { authRequired ?? false }
 
     var productName: String { product ?? "BandPassFilterController" }
     var versionDisplay: String {

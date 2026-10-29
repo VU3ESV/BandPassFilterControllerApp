@@ -16,6 +16,11 @@ struct HistoryView: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
 
+                if let message = model.historyMessage {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout).foregroundStyle(.red)
+                }
+
                 if events.isEmpty {
                     emptyState
                 } else {

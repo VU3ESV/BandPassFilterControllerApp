@@ -1,10 +1,17 @@
 import Foundation
 
-enum BPFClientError: LocalizedError {
+enum BPFClientError: LocalizedError, Equatable {
     case invalidHost
     case badResponse(Int)
     case transport(String)
     case decoding(String)
+    /// HTTP 401 and no password is stored for this device (firmware ≥ v0.6.0).
+    case passwordRequired
+    /// HTTP 401 although a password was sent — it's wrong.
+    case passwordRejected
+    /// The server asked for HTTP Basic, which would send the password in clear.
+    /// The firmware only issues Digest challenges, so this is not our device.
+    case insecureAuthRefused
 
     var errorDescription: String? {
         switch self {
@@ -16,7 +23,17 @@ enum BPFClientError: LocalizedError {
             return message
         case .decoding(let message):
             return "Could not read device response: \(message)"
+        case .passwordRequired:
+            return "Device requires a password. Enter it under Settings ▸ Device Password."
+        case .passwordRejected:
+            return "Device rejected the password. Check it under Settings ▸ Device Password."
+        case .insecureAuthRefused:
+            return "Device asked for the password unencrypted (HTTP Basic); not sent. The controller only uses Digest, so check the device address."
         }
+    }
+
+    var isAuthFailure: Bool {
+        self == .passwordRequired || self == .passwordRejected || self == .insecureAuthRefused
     }
 }
 
@@ -32,13 +49,19 @@ enum BPFClientError: LocalizedError {
 ///   POST /reboot                       -> soft reboot
 ///   POST /factory_reset?confirm=YES    -> EEPROM zeroed + reboot
 ///   GET  /live                         -> live HTML page (opened in a browser)
+///
+/// Firmware ≥ v0.6.0 with an admin password set answers `GET /` and every POST
+/// with a Digest challenge; `DeviceAuthDelegate` answers it with `password`.
 struct BPFClient {
     /// Base host as the user typed it, e.g. "SO2R-BPF.local" or "192.168.4.1".
     let host: String
     let timeout: TimeInterval
+    /// Device admin password (user `admin`) from the Keychain; nil if none stored.
+    let password: String?
 
-    init(host: String, timeout: TimeInterval = 4.0) {
+    init(host: String, password: String? = nil, timeout: TimeInterval = 4.0) {
         self.host = host
+        self.password = password
         self.timeout = timeout
     }
 
@@ -59,59 +82,18 @@ struct BPFClient {
         return path.isEmpty ? base : base.appendingPathComponent(path)
     }
 
-    private func session() -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = timeout
-        config.waitsForConnectivity = false
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: config)
-    }
-
     // MARK: - Discovery
 
     /// Identify a device by its static `/discover` record. Used to confirm a
     /// typed/discovered address really is a BPF controller and show its identity.
     func fetchDiscover() async throws -> DeviceIdentity {
-        let url = try baseURL().appendingPathComponent("discover")
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session().data(for: request)
-        } catch {
-            throw BPFClientError.transport(error.localizedDescription)
-        }
-        try Self.validate(response)
-        do {
-            return try JSONDecoder().decode(DeviceIdentity.self, from: data)
-        } catch {
-            throw BPFClientError.decoding(error.localizedDescription)
-        }
+        try await getJSON("discover")
     }
 
     // MARK: - Status
 
     func fetchStatus() async throws -> DeviceStatus {
-        let url = try baseURL().appendingPathComponent("status")
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session().data(for: request)
-        } catch {
-            throw BPFClientError.transport(error.localizedDescription)
-        }
-        try Self.validate(response)
-        do {
-            return try JSONDecoder().decode(DeviceStatus.self, from: data)
-        } catch {
-            throw BPFClientError.decoding(error.localizedDescription)
-        }
+        try await getJSON("status")
     }
 
     // MARK: - Config
@@ -119,42 +101,13 @@ struct BPFClient {
     /// Read the device's stored configuration (host/port/IARU/SSID/hostname).
     /// The firmware never returns the Wi-Fi password, so it decodes as empty.
     func fetchConfig() async throws -> DeviceConfig {
-        let url = try baseURL().appendingPathComponent("config")
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session().data(for: request)
-        } catch {
-            throw BPFClientError.transport(error.localizedDescription)
-        }
-        try Self.validate(response)
-        do {
-            return try JSONDecoder().decode(DeviceConfig.self, from: data)
-        } catch {
-            throw BPFClientError.decoding(error.localizedDescription)
-        }
+        try await getJSON("config")
     }
 
     /// Raw `/config` JSON bytes, used for the "Download config" backup so the
     /// saved file is byte-for-byte what the firmware serves.
     func fetchConfigData() async throws -> Data {
-        let url = try baseURL().appendingPathComponent("config")
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session().data(for: request)
-        } catch {
-            throw BPFClientError.transport(error.localizedDescription)
-        }
-        try Self.validate(response)
-        return data
+        try await send(jsonRequest("config"))
     }
 
     // MARK: - Mutations
@@ -186,8 +139,7 @@ struct BPFClient {
 
     func reboot() async throws {
         let url = try baseURL().appendingPathComponent("reboot")
-        // The device restarts and may drop the connection; tolerate transport errors.
-        try? await postForm(url: url, body: "")
+        try await postTolerantOfRestart(url: url)
     }
 
     func factoryReset() async throws {
@@ -195,30 +147,81 @@ struct BPFClient {
                                        resolvingAgainstBaseURL: false)
         components?.queryItems = [URLQueryItem(name: "confirm", value: "YES")]
         guard let url = components?.url else { throw BPFClientError.invalidHost }
-        try? await postForm(url: url, body: "")
+        try await postTolerantOfRestart(url: url)
     }
 
     // MARK: - Helpers
+
+    /// The device restarts and may drop the connection before replying, so
+    /// transport errors are tolerated — but a refused password is not.
+    private func postTolerantOfRestart(url: URL) async throws {
+        do {
+            try await postForm(url: url, body: "")
+        } catch let error as BPFClientError where error.isAuthFailure {
+            throw error
+        } catch {
+            return
+        }
+    }
+
+    private func jsonRequest(_ path: String) throws -> URLRequest {
+        var request = URLRequest(url: try baseURL().appendingPathComponent(path))
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        return request
+    }
+
+    private func getJSON<T: Decodable>(_ path: String) async throws -> T {
+        let data = try await send(jsonRequest(path))
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw BPFClientError.decoding(error.localizedDescription)
+        }
+    }
 
     private func postForm(url: URL, body: String) async throws {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = body.data(using: .utf8)
-
-        let response: URLResponse
-        do {
-            (_, response) = try await session().data(for: request)
-        } catch {
-            throw BPFClientError.transport(error.localizedDescription)
-        }
-        try Self.validate(response)
+        _ = try await send(request)
     }
 
-    private static func validate(_ response: URLResponse) throws {
-        guard let http = response as? HTTPURLResponse else { return }
-        guard (200..<300).contains(http.statusCode) else {
-            throw BPFClientError.badResponse(http.statusCode)
+    /// Run one request on its own ephemeral session whose delegate answers the
+    /// device's auth challenge. The session is invalidated afterwards, which
+    /// also releases the delegate (sessions hold theirs strongly).
+    private func send(_ request: URLRequest) async throws -> Data {
+        let auth = DeviceAuthDelegate(password: password)
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = timeout
+        config.waitsForConnectivity = false
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let session = URLSession(configuration: config, delegate: auth, delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            // A challenge we cancelled surfaces as a cancelled task; say why.
+            if let failure = auth.failure { throw failure }
+            throw BPFClientError.transport(error.localizedDescription)
         }
+        guard let http = response as? HTTPURLResponse else { return data }
+        if http.statusCode == 401, let failure = auth.failure { throw failure }
+        if let error = Self.error(forStatus: http.statusCode, passwordSupplied: password?.isEmpty == false) {
+            throw error
+        }
+        return data
+    }
+
+    /// Map an HTTP status to an error (nil for 2xx). A 401 becomes a typed auth
+    /// error, split on whether we had a password to offer.
+    static func error(forStatus code: Int, passwordSupplied: Bool) -> BPFClientError? {
+        if (200..<300).contains(code) { return nil }
+        if code == 401 { return passwordSupplied ? .passwordRejected : .passwordRequired }
+        return .badResponse(code)
     }
 }
