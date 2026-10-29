@@ -9,7 +9,8 @@ public final class BPFPlugin: RadioPlugin {
     public static let manifest: RadioPluginManifest? = RadioPluginManifest(
         id: "bpf",
         name: "Band Pass Filter",
-        version: "1.0",
+        version: "1.0",   // in-process manifest only; the shipped .appex / plugin.json carry the
+                          // app's release VERSION (scripts/make-radioplugin.sh, package-signed.sh)
         isolation: .inProcess,                       // first-party, linked into the host
         capabilities: [.networkClient, .bonjour],
         systemImage: "line.3.horizontal.decrease.circle",

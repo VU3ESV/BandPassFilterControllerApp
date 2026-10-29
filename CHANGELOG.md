@@ -7,6 +7,14 @@ an [Amateur Radio Suite](https://github.com/VU3ESV/AmateurRadioSuite) plugin. Fo
 
 ## [Unreleased]
 
+### Fixed
+- **The Suite plugin reports the app's release version.** The `.radioplugin`'s `plugin.json`
+  and the `.appex` (standalone and embedded) said 1.0.0 / 1.0 in every release, so the Amateur
+  Radio Suite couldn't tell a new plugin from an old one. `make-radioplugin.sh` and
+  `package-signed.sh` now pass `VERSION` (leading `v` dropped) as `MARKETING_VERSION` /
+  `CURRENT_PROJECT_VERSION` and `plugin.json`'s `__VERSION__` is stamped; both scripts stop if the
+  built version doesn't match. Same mechanism as LP-700-App#22 / LP-100A-App#14.
+
 ### Added
 - **Device password (firmware v0.6.0 auth)**: answers the controller's HTTP Digest
   challenge as `admin` with a password stored in the login Keychain

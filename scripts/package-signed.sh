@@ -42,8 +42,11 @@ echo "==> Building the extension (.appex)"
 ( cd Xcode && xcodegen generate >/dev/null )
 DERIVED="$(mktemp -d)"
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
-  -destination 'platform=macOS' -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO build >/dev/null
+  -destination 'platform=macOS' -derivedDataPath "$DERIVED" \
+  MARKETING_VERSION="${VERSION#v}" CURRENT_PROJECT_VERSION="${VERSION#v}" CODE_SIGNING_ALLOWED=NO build >/dev/null
 APPEX="$(find "$DERIVED/Build/Products" -name "$APPEX_NAME" | head -1)"
+APPEX_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APPEX/Contents/Info.plist")"
+[ "$APPEX_VERSION" = "${VERSION#v}" ] || { echo "ERROR: $APPEX_NAME reports '$APPEX_VERSION', expected '${VERSION#v}'"; exit 1; }
 
 echo "==> Embedding $APPEX_NAME under Contents/Extensions/"
 mkdir -p "$APP/Contents/Extensions"
