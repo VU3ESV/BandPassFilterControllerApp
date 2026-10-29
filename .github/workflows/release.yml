@@ -117,6 +117,8 @@ jobs:
           ./scripts/package-signed.sh        # -> dist/BandPassFilterController-<NEXT>-macos.dmg
 
       - name: Build plugin package (.appex / .radioplugin)
+        env:
+          VERSION: ${{ steps.version.outputs.next }}   # make-radioplugin.sh drops the leading v
         run: |
           sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
           xcodebuild -version
