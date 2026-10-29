@@ -8,6 +8,15 @@ an [Amateur Radio Suite](https://github.com/VU3ESV/AmateurRadioSuite) plugin. Fo
 ## [Unreleased]
 
 ### Added
+- **Device password (firmware v0.6.0 auth)**: answers the controller's HTTP Digest
+  (or Basic) challenge as `admin` with a password stored in the login Keychain
+  (service `BandPassFilterController`, account = device hostname), set from
+  Settings ▸ Device Password. A 401 is a typed error ("Device requires a password" /
+  "Device rejected the password"). A refused bypass beeps, raises an alert and keeps a
+  red banner on Controls, and the UI only shows bypass once `/status` confirms it. Save,
+  clear-history, reboot and factory-reset failures are shown inline instead of being
+  swallowed. Settings warns when `/discover` reports `auth_required` and no password is
+  stored. First unit-test target (`swift test`).
 - **Out-of-process plugin + pipeline** ([CONVERTING-A-PLUGIN.md](https://github.com/VU3ESV/AmateurRadioSuite/blob/main/docs/CONVERTING-A-PLUGIN.md)):
   an ExtensionKit `.appex` target + `scripts/make-radioplugin.sh` packaging `BPF.radioplugin`,
   so the suite can browse/install the controller and host it sandboxed via

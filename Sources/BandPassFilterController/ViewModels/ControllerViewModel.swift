@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 /// Drives the whole UI: persists the device address, polls `/status`,
 /// and exposes actions (save config, bypass, reboot, factory reset).
@@ -15,6 +16,22 @@ final class ControllerViewModel: ObservableObject {
         var isOnline: Bool { if case .online = self { return true } else { return false } }
     }
 
+    /// A manual-bypass request the device did not apply. Safety-relevant: the
+    /// user may be about to tune an ATU at high power, so it is shown as an
+    /// alert plus a banner on Controls until a later bypass request succeeds.
+    struct BypassFailure: Identifiable, Equatable {
+        let id = UUID()
+        let bpf: Int
+        let on: Bool
+        let message: String
+
+        var title: String { "BPF \(bpf) bypass \(on ? "ON" : "OFF") was NOT applied" }
+        var advice: String {
+            on ? "Don't rely on BPF \(bpf) being in bypass. Do not tune at high power until Controls shows bypass engaged."
+               : "BPF \(bpf) may still be forced to bypass."
+        }
+    }
+
     // Persisted settings
     @AppStorage("device.host", store: AppDefaults.store) var host: String = "SO2R-BPF.local"
     @AppStorage("poll.interval", store: AppDefaults.store) var pollInterval: Double = 1.5
@@ -27,6 +44,22 @@ final class ControllerViewModel: ObservableObject {
     /// Static identity from `GET /discover`, fetched once per connection.
     @Published private(set) var identity: DeviceIdentity?
 
+    // Device auth (firmware ≥ v0.6.0)
+    /// Hostname the firmware itself reports (`/discover`, else fetched `/config`);
+    /// the Keychain account for its password. Never the editable draft.
+    @Published private(set) var deviceHostname: String?
+    @Published private(set) var hasDevicePassword = false
+    @Published var passwordMessage: String?
+    /// Read from the Keychain when the hostname becomes known, so any Keychain
+    /// access prompt appears at connect time rather than mid-bypass.
+    private var devicePassword: String?
+
+    // Action feedback
+    @Published var bypassFailure: BypassFailure?
+    @Published var showBypassAlert = false
+    @Published var historyMessage: String?
+    @Published var maintenanceMessage: String?
+
     // Editable config draft (Settings screen)
     @Published var configDraft = DeviceConfig()
     @Published var configMessage: String?
@@ -38,7 +71,10 @@ final class ControllerViewModel: ObservableObject {
 
     private var pollTask: Task<Void, Never>?
 
-    var client: BPFClient { BPFClient(host: host) }
+    var client: BPFClient { BPFClient(host: host, password: devicePassword) }
+
+    /// `/discover` says a password is set but we have none to offer.
+    var needsDevicePassword: Bool { (identity?.requiresAuth ?? false) && !hasDevicePassword }
 
     // MARK: - Polling lifecycle
 
@@ -59,6 +95,11 @@ final class ControllerViewModel: ObservableObject {
         stop()
         status = nil
         identity = nil
+        deviceHostname = nil
+        devicePassword = nil
+        hasDevicePassword = false
+        passwordMessage = nil
+        bypassFailure = nil
         connection = .idle
         start()
     }
@@ -81,7 +122,10 @@ final class ControllerViewModel: ObservableObject {
             connection = .online
             lastUpdated = Date()
             // Identity is static; fetch it once per connection after we're online.
-            if identity == nil { identity = try? await client.fetchDiscover() }
+            if identity == nil {
+                identity = try? await client.fetchDiscover()
+                adoptHostname(identity?.hostname)
+            }
         } catch {
             connection = .offline(error.localizedDescription)
         }
@@ -110,6 +154,7 @@ final class ControllerViewModel: ObservableObject {
             configDraft = try await client.fetchConfig()
             configLoaded = true
             configMessage = nil
+            if deviceHostname == nil { adoptHostname(configDraft.hostname) }
         } catch {
             prepareConfigDraft()
             configMessage = "Couldn't read current config from device: \(error.localizedDescription)"
@@ -136,6 +181,7 @@ final class ControllerViewModel: ObservableObject {
         do {
             try await client.saveConfig(configDraft)
             configMessage = "Saved. The device may reboot to apply network changes."
+            carryPasswordToRenamedDevice(configDraft.hostname)
             // Re-sync the draft with what the device actually stored, so the
             // form shows the persisted values (and any clamping the firmware did).
             if let fresh = try? await client.fetchConfig() { configDraft = fresh }
@@ -146,36 +192,100 @@ final class ControllerViewModel: ObservableObject {
 
     // MARK: - Controls
 
+    /// Never optimistic: the Controls view shows bypass only from `/status`,
+    /// which is re-read after the request whether or not it succeeded.
     func setBypass(bpf: Int, on: Bool) async {
         do {
             try await client.setBypass(bpf: bpf, on: on)
-            await refresh()
+            bypassFailure = nil
         } catch {
-            connection = .offline(error.localizedDescription)
+            bypassFailure = BypassFailure(bpf: bpf, on: on, message: error.localizedDescription)
+            showBypassAlert = true
+            NSSound.beep()
         }
+        await refresh()
     }
 
     func reboot() async {
-        try? await client.reboot()
-        connection = .offline("Rebooting…")
-        status = nil
+        maintenanceMessage = nil
+        do {
+            try await client.reboot()
+            connection = .offline("Rebooting…")
+            status = nil
+        } catch {
+            maintenanceMessage = "Reboot failed: \(error.localizedDescription)"
+        }
     }
 
     func factoryReset() async {
-        try? await client.factoryReset()
-        connection = .offline("Factory reset — device rebooting…")
-        status = nil
+        maintenanceMessage = nil
+        do {
+            try await client.factoryReset()
+            connection = .offline("Factory reset — device rebooting…")
+            status = nil
+        } catch {
+            maintenanceMessage = "Factory reset failed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Device password (Keychain)
+
+    /// Switch the Keychain account to the hostname the device reports and load
+    /// its password. Only reads the secret when an item exists.
+    private func adoptHostname(_ name: String?) {
+        guard let name, !name.isEmpty, name != deviceHostname else { return }
+        deviceHostname = name
+        let exists = DeviceKeychain.hasPassword(for: name)
+        devicePassword = exists ? DeviceKeychain.password(for: name) : nil
+        hasDevicePassword = devicePassword != nil
+        if exists && devicePassword == nil {
+            passwordMessage = "A Keychain item exists for \(name) but the app couldn't read it (access denied?). Re-enter the password to replace it."
+        }
+    }
+
+    func saveDevicePassword(_ password: String) {
+        guard let account = deviceHostname, !password.isEmpty else { return }
+        do {
+            try DeviceKeychain.setPassword(password, for: account)
+            devicePassword = password
+            hasDevicePassword = true
+            passwordMessage = "Saved to Keychain for \(account)."
+        } catch {
+            passwordMessage = "Couldn't save to Keychain: \(error.localizedDescription)"
+        }
+    }
+
+    func forgetDevicePassword() {
+        guard let account = deviceHostname else { return }
+        do {
+            try DeviceKeychain.deletePassword(for: account)
+            devicePassword = nil
+            hasDevicePassword = false
+            passwordMessage = "Removed from Keychain for \(account)."
+        } catch {
+            passwordMessage = "Couldn't remove from Keychain: \(error.localizedDescription)"
+        }
+    }
+
+    /// The Keychain account follows the hostname, so after a successful rename
+    /// store the in-memory password under the new name too (the old item stays).
+    private func carryPasswordToRenamedDevice(_ newHostname: String) {
+        guard let password = devicePassword, !newHostname.isEmpty,
+              newHostname != deviceHostname,
+              !DeviceKeychain.hasPassword(for: newHostname) else { return }
+        try? DeviceKeychain.setPassword(password, for: newHostname)
     }
 
     // MARK: - History
 
     func clearHistory() async {
+        historyMessage = nil
         do {
             try await client.clearHistory()
-            await refresh()
         } catch {
-            connection = .offline(error.localizedDescription)
+            historyMessage = "Clear failed: \(error.localizedDescription)"
         }
+        await refresh()
     }
 
     // MARK: - Backup / Restore

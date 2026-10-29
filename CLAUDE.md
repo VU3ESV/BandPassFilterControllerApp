@@ -20,6 +20,7 @@ Requirements: macOS 13+, Swift 5.9+ toolchain (Xcode command-line tools).
 
 ```bash
 swift build                 # debug build
+swift test                  # unit tests (Tests/BandPassFilterControllerTests, no device needed)
 swift run                   # build + launch the app
 ./build-app.sh              # release build -> ./dist/Band Pass Filter Controller.app
 open "dist/Band Pass Filter Controller.app"
@@ -38,9 +39,12 @@ Sources/BandPassFilterController/
 ├── Models/
 │   ├── Band.swift                     # Yaesu BCD band enum + tolerant parsing
 │   ├── DeviceStatus.swift             # /status JSON model (DeviceStatus, RadioStatus)
-│   └── DeviceConfig.swift             # editable config + /save form encoding
+│   ├── DeviceConfig.swift             # editable config + /save form encoding
+│   └── DeviceIdentity.swift           # /discover JSON (incl. auth_required)
 ├── Networking/
-│   ├── BPFClient.swift                # async URLSession client over the HTTP API
+│   ├── BPFClient.swift                # async URLSession client over the HTTP API (+ typed 401 errors)
+│   ├── DeviceAuth.swift               # Digest/Basic challenge policy + per-request URLSession delegate
+│   ├── DeviceKeychain.swift           # admin password in the login Keychain (per device hostname)
 │   └── DiscoveryService.swift         # Bonjour browse of _bpf-so2r._tcp (mDNS auto-discovery)
 ├── ViewModels/
 │   └── ControllerViewModel.swift      # @MainActor ObservableObject: polling, state, actions
@@ -49,7 +53,8 @@ Sources/BandPassFilterController/
     ├── DashboardView.swift            # filter cards (band/freq/RF sensors) + device info (+firmware)
     ├── ControlsView.swift             # manual bypass
     ├── HistoryView.swift              # band-change history + clear
-    └── SettingsView.swift             # TCI servers, network, backup/restore, web pages, reboot/factory reset
+    └── SettingsView.swift             # TCI servers, device password, network, backup/restore, web pages, reboot/factory reset
+Tests/BandPassFilterControllerTests/   # XCTest: pure logic only (no device, no Keychain)
 ```
 
 Data flow: `ControllerViewModel` owns a `BPFClient`, runs a polling `Task` that
@@ -67,10 +72,10 @@ and `ESP32_SO2R_TCI/BcdBandPlan.h` (`bandName()`).
 
 | Route | Method | Params / Body | Notes |
 |-------|--------|---------------|-------|
-| `/discover` | GET | — | static identity JSON: `service, vendor, product, version, build, hostname, ip, bpf_count, ports, endpoints`. Companion to the `_bpf-so2r._tcp` mDNS service. |
+| `/discover` | GET | — | static identity JSON: `service, vendor, product, version, build, hostname, ip, bpf_count, ports, endpoints`, and (v0.6.0+) `auth_required`. Companion to the `_bpf-so2r._tcp` mDNS service. |
 | `/status` | GET | — | JSON (below); now includes `version`, `build`, `sensors`, `history` |
 | `/config` | GET | — | JSON config (host/port/iaru/ssid/hostname); used by Settings + backup. No password. |
-| `/save` | POST | `ssid, pass, hostname, r1_host, r1_port, r1_iaru, r2_host, r2_port, r2_iaru` | form-urlencoded |
+| `/save` | POST | `ssid, pass, hostname, r1_host, r1_port, r1_iaru, r2_host, r2_port, r2_iaru` (+ optional `admin_pass`, v0.6.0) | form-urlencoded; app never sends `admin_pass` |
 | `/bypass` | POST | `bpf=1\|2 & on=0\|1` | manual bypass |
 | `/history` | POST | `clear=YES` | clears the band-change history ring buffer |
 | `/reboot` | POST | — | soft restart |
@@ -126,6 +131,26 @@ Gotchas already handled in the models — preserve these:
   thread that called `start()`), and `MainActor.assumeIsolated` is macOS-14-only.
 - `Info.plist` must keep `NSBonjourServices` (`_bpf-so2r._tcp`) and
   `NSLocalNetworkUsageDescription`, or the OS blocks the Bonjour browse.
+- Auth (firmware ≥ v0.6.0): with an admin password set, `GET /` and every POST
+  (`/save`, `/bypass`, `/history`, `/reboot`, `/factory_reset`) answer 401 +
+  `WWW-Authenticate: Digest realm="BandPassFilterController"` (ESP32
+  `requestAuthentication(DIGEST_AUTH, …)`), user `admin`. `/status`, `/config`,
+  `/discover`, `/live` and the `:81` WebSocket stay open. `BPFClient` builds one
+  ephemeral session per request with a `DeviceAuthDelegate` and invalidates it
+  after. The ESP32 keeps one nonce and regenerates it on every challenge, so a
+  fresh 401 is normal and is answered again; only `previousFailureCount > 0`
+  means the password was rejected (`DeviceAuth.decide`). 401 maps to
+  `BPFClientError.passwordRequired` / `.passwordRejected`.
+- The password lives in the login Keychain: generic password, service
+  `BandPassFilterController`, account = the hostname the **device** reports
+  (`/discover`, else fetched `/config`) — never the editable draft. The view model
+  loads it when that hostname becomes known, so a Keychain prompt appears at
+  connect time rather than mid-bypass.
+- Bypass is safety-relevant (pressed before tuning an ATU at high power). The UI
+  shows bypass only from `/status` (`tuning` is true while manual bypass is on),
+  never optimistically; a failed `/bypass` beeps, raises an alert and keeps a red
+  banner on Controls until a later bypass succeeds. `reboot()` / `factoryReset()`
+  tolerate the dropped connection but rethrow auth failures.
 
 ## Conventions
 
